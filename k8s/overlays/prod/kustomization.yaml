@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: messager-prod
+resources:
+  - ../../base
+images:
+  # Для реального prod замените latest на immutable tag или digest из вашего registry.
+  - name: mablinov2704/frontend
+    newTag: latest
+  - name: mablinov2704/bff
+    newTag: latest
+  - name: mablinov2704/user-service
+    newTag: latest
+  - name: mablinov2704/message-service
+    newTag: latest
+patches:
+  - path: patches/prod-replicas-resources.yaml
+  - target:
+      kind: Namespace
+      name: messager
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: messager-prod
+  - target:
+      kind: Ingress
+      name: messager-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: messager.example.com
+  - target:
+      kind: PersistentVolume
+      name: s3-pv-messager-uploads
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: s3-pv-messager-prod-uploads
+      - op: replace
+        path: /spec/mountOptions
+        value:
+          - allow-delete
+          - region=us-east-1
+          - url=http://minio.messager-prod.svc.cluster.local:9000
+          - use_path_request_style
+      - op: replace
+        path: /spec/csi/volumeHandle
+        value: messager-prod-uploads
+      - op: replace
+        path: /spec/csi/nodePublishSecretRef/namespace
+        value: messager-prod
+  - target:
+      kind: PersistentVolumeClaim
+      name: message-uploads-pvc
+    patch: |-
+      - op: replace
+        path: /spec/volumeName
+        value: s3-pv-messager-prod-uploads

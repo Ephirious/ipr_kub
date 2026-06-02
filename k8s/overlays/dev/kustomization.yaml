@@ -1,0 +1,56 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: messager-dev
+resources:
+  - ../../base
+images:
+  - name: mablinov2704/frontend
+    newTag: latest
+  - name: mablinov2704/bff
+    newTag: latest
+  - name: mablinov2704/user-service
+    newTag: latest
+  - name: mablinov2704/message-service
+    newTag: latest
+patches:
+  - target:
+      kind: Namespace
+      name: messager
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: messager-dev
+  - target:
+      kind: Ingress
+      name: messager-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: dev.messager.local
+  - target:
+      kind: PersistentVolume
+      name: s3-pv-messager-uploads
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: s3-pv-messager-dev-uploads
+      - op: replace
+        path: /spec/mountOptions
+        value:
+          - allow-delete
+          - region=us-east-1
+          - url=http://minio.messager-dev.svc.cluster.local:9000
+          - use_path_request_style
+      - op: replace
+        path: /spec/csi/volumeHandle
+        value: messager-dev-uploads
+      - op: replace
+        path: /spec/csi/nodePublishSecretRef/namespace
+        value: messager-dev
+  - target:
+      kind: PersistentVolumeClaim
+      name: message-uploads-pvc
+    patch: |-
+      - op: replace
+        path: /spec/volumeName
+        value: s3-pv-messager-dev-uploads

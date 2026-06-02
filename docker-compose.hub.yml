@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: messager
+      POSTGRES_PASSWORD: messager
+      POSTGRES_DB: messager
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate-users:
+    image: ghcr.io/kukymbr/goose-docker:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: "host=postgres user=messager password=messager dbname=messager_users sslmode=disable"
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./user-service/migrations:/migrations
+
+  migrate-messages:
+    image: ghcr.io/kukymbr/goose-docker:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: "host=postgres user=messager password=messager dbname=messager_messages sslmode=disable"
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./message-service/migrations:/migrations
+
+  user-service:
+    image: mablinov2704/user-service:latest
+    restart: unless-stopped
+    depends_on:
+      migrate-users:
+        condition: service_completed_successfully
+    environment:
+      HTTP_PORT: "8081"
+      DB_DSN: "host=postgres user=messager password=messager dbname=messager_users sslmode=disable"
+
+  message-service:
+    image: mablinov2704/message-service:latest
+    restart: unless-stopped
+    depends_on:
+      migrate-messages:
+        condition: service_completed_successfully
+    environment:
+      HTTP_PORT: "8082"
+      DB_DSN: "host=postgres user=messager password=messager dbname=messager_messages sslmode=disable"
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+
+  bff:
+    image: mablinov2704/bff:latest
+    restart: unless-stopped
+    depends_on:
+      - user-service
+      - message-service
+    environment:
+      HTTP_PORT: "8080"
+      USER_SERVICE_URL: "http://user-service:8081"
+      MSG_SERVICE_URL: "http://message-service:8082"
+
+  frontend:
+    image: mablinov2704/frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - bff
+    environment:
+      # BFF_URL: публичный URL, который браузер использует для API-запросов.
+      # Оставьте пустым (default) — nginx сам проксирует запросы к bff внутри сети.
+      # Установите, если frontend и bff доступны на разных доменах/портах:
+      #   BFF_URL: "http://your-server:8080"
+      BFF_URL: ""
+      BFF_INTERNAL_URL: "http://bff:8080"
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+  uploads_data:
